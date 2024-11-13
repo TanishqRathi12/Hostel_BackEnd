@@ -4,6 +4,8 @@ import Student from "../models/Student.js";
 import Admin from "../models/admin.js";
 import Attendance from "../models/attendance.js";
 import feedBack from "../models/Feedback.js";
+import RoommatePair from "../models/roomMatepaired.js";
+import RoomMate from "../models/RoomMate.js";
 //import ManualAttendance from "../models/manualAttendance.js";
 import { adminSigninSchema, adminSignupSchema } from "../validation/schema.js";
 
@@ -147,6 +149,68 @@ export const getAttendanceByStIdHandler = async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 };
+
+
+export const shuffleAndSaveHostelPairs = async (req, res) => {
+  try {
+    const  hostelId = req.params.HostelId; // Admin provides the hostel ID to shuffle
+   // console.log(hostelId)
+
+    // Find all RoomMate profiles for students in the specified hostel
+    const roommatesInHostel = await RoomMate.find({ Hostel: hostelId }).populate("StudentId");
+
+    if (roommatesInHostel.length === 0) {
+      return res.status(404).json({ message: "No students found in this hostel" });
+    }
+
+    // Shuffle logic: Sort RoomMate profiles based on preferences (e.g., budget, cleanliness level)
+    roommatesInHostel.sort((a, b) => {
+      if (a.budget !== b.budget) {
+        return a.budget - b.budget; // Sort by budget (ascending)
+      }
+      // Further sort by cleanliness level if budgets are the same
+      const cleanlinessOrder = { Low: 1, Medium: 2, High: 3 };
+      return cleanlinessOrder[a.lifestyle.cleanlinessLevel] - cleanlinessOrder[b.lifestyle.cleanlinessLevel];
+    });
+
+    // Create roommate pairs and save them to the RoommatePair model
+    let matches = [];
+    for (let i = 0; i < roommatesInHostel.length - 1; i += 2) {
+      const pair = {
+        Hostel: hostelId,
+        student1: roommatesInHostel[i].StudentId._id,
+        student2: roommatesInHostel[i + 1] ? roommatesInHostel[i + 1].StudentId._id : null, // Null if no pair available
+      };
+      // Save the pair to the database
+      
+      const newPair = new RoommatePair(pair);
+      await newPair.save();
+      // Add the pair to the matches array for the response
+      matches.push({
+        student1: roommatesInHostel[i].StudentId.name,
+        student2: roommatesInHostel[i + 1] ? roommatesInHostel[i + 1].StudentId.name : "No partner found",
+      });
+    }
+
+    res.status(200).json({
+      message: `Roommate pairs created and saved successfully for hostel with ID: ${hostelId}`,
+      matches,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getPairsByHostelId = async (req,res)=>{
+  const HostelId = req.params.HostelId;
+  try {
+    const pairs = await RoommatePair.find({Hostel:HostelId});
+    res.status(200).json(pairs);
+  } catch (error) {
+    res.status(404).json({message:"Don't Have any generated Pairs"})
+  }
+}
+
 
 export const getManualAttendanceByStIdHandler = async (req, res) => {
   const StId = req.params.StId;
